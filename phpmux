@@ -1,0 +1,62 @@
+#!/usr/bin/php
+<?php
+    function my_exec($cmd) {
+        // echo $cmd."\n";
+        exec($cmd);
+    }
+
+    $longopts  = [
+        "argument_file:",
+        "command:",
+        "session:"
+    ];
+    $options = getopt("", $longopts);
+
+    foreach ($longopts as $lo) {
+        $lo = explode(':', $lo)[0];
+        if (!isset($options[$lo]) || !$options[$lo]) {
+            echo "Error: You are missing argument'--{$lo}'. Here are the options:\n";
+            echo "    --argument_file \"see_example.txt\"\n";
+            echo "    --command \"tail -f /var/log/%1/%2.log\"\n";
+            echo "    --session whatever\n";
+            echo "Each line in argument_file opens a tmux session using command as a template\n";
+            echo "It will replace %n with exploded/space-delimited line content at position n\n";
+            echo "session name is the tmux session name if you need to access it after\n";
+            die(1);
+        }
+    }
+
+    // kill the session if it exists
+    my_exec("tmux kill-session -t {$options['session']} > /dev/null 2>&1");
+    sleep(0.2);
+
+    // loop the file, build the command, open the pane
+    $handle = fopen($options['argument_file'], "r");
+    if ($handle) {
+        $count = 0;
+        while (($line = fgets($handle)) !== false) {        // loop file names
+            $arguments = explode(" ", $line);
+            $command = $options['command'];
+            $arg_count = 1;
+            foreach ($arguments as $arg) {                  // build command
+                $command = str_replace('%'.$arg_count, trim($arg), $command);
+                $arg_count++;
+            }
+
+            if ($count === 0)                               // launch session
+                my_exec("tmux new-session -d -s {$options['session']} '{$command}'");
+            else if ($count > 0)
+                my_exec("tmux split-window -t {$options['session']}: '{$command}'");
+            my_exec("tmux select-layout -t {$options['session']}: tiled");
+            $count++;
+        }
+        fclose($handle);
+    } else {
+        echo "Couldn't open argument_file '{$options['argument_file']}'. Please make sure the file exists and you have read permissions.\n";
+        die(1);
+    } 
+
+    echo "Done! Connect with:   tmux attach-session -t {$options['session']}\n";
+    echo "Detach with: ctrl+b -> d, or kill with: ctrl+d\n";
+    die(0);
+?>
